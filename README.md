@@ -20,25 +20,13 @@
 
 ## Требования
 
-- Docker Desktop
-- Python 3.12+
-- macOS/Linux shell
+- Docker Desktop или OrbStack
 
 ## Первый запуск
 
 ```bash
 cp .env.example .env
-docker compose up -d postgres
-
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-export DATABASE_URL='postgresql+psycopg://mephi:mephi@localhost:5432/mephi_journals'
-export PYTHONPATH="$PWD"
-
-python -m src.pipeline.update --all
-streamlit run src/dashboard/app.py --server.port 8501
+docker compose up -d
 ```
 
 Дашборд откроется по адресу:
@@ -47,33 +35,39 @@ streamlit run src/dashboard/app.py --server.port 8501
 http://localhost:8501
 ```
 
-## Повторная загрузка
+При первом запуске образ соберётся автоматически. База данных создаётся при
+первом запуске `updater`.
+
+Загрузить данные:
+
+```bash
+docker compose run --rm updater --all
+```
+
+## Обновление данных
 
 Инкрементальное обновление всех журналов:
 
 ```bash
-source .venv/bin/activate
-export DATABASE_URL='postgresql+psycopg://mephi:mephi@localhost:5432/mephi_journals'
-export PYTHONPATH="$PWD"
-python -m src.pipeline.update --all
+docker compose run --rm updater --all
 ```
 
 Обновить один журнал:
 
 ```bash
-python -m src.pipeline.update --source vestnik_mephi
+docker compose run --rm updater --source vestnik_mephi
 ```
 
 Ограничить количество записей для быстрой проверки:
 
 ```bash
-python -m src.pipeline.update --source vestnik_mephi --max-records 1
+docker compose run --rm updater --source vestnik_mephi --max-records 1
 ```
 
 Полностью пересоздать базу и загрузить заново:
 
 ```bash
-python -m src.pipeline.update --reset --all
+docker compose run --rm updater --reset --all
 ```
 
 ## Еженедельное обновление на macOS
@@ -131,5 +125,5 @@ logs/weekly_update.err.log
 полную перезагрузку:
 
 ```bash
-python -m src.pipeline.update --reset --all
+docker compose run --rm updater --reset --all
 ```

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from hashlib import sha256
 import re
+import threading
 import time
 from urllib.parse import urljoin, urlparse
 
@@ -25,24 +27,46 @@ HEADERS = {
 }
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 AFFILIATION_PARSER_VERSION = "html-citation-author-institution-v1"
+OAI_MAX_WORKERS = 6
 urllib3.disable_warnings(InsecureRequestWarning)
+
+_local = threading.local()
+
+
+def _session(insecure: bool = False) -> requests.Session:
+    key = "insecure" if insecure else "secure"
+    session = getattr(_local, key, None)
+    if session is None:
+        session = requests.Session()
+        session.trust_env = False
+        setattr(_local, key, session)
+    return session
 
 
 def collect_oai_articles(endpoint: str, max_records: int | None = None) -> list[CollectedArticle]:
-    records: list[CollectedArticle] = []
     identifiers = _list_identifiers(endpoint, max_records=max_records)
-    print(f"{urlparse(endpoint).netloc}: found {len(identifiers)} OAI identifiers", flush=True)
-    for index, identifier in enumerate(identifiers, start=1):
-        record = _get_record(endpoint, identifier)
-        item = _parse_oai_record(record)
-        if item:
-            records.append(item)
-        if index == 1 or index % 25 == 0 or index == len(identifiers):
-            print(f"{urlparse(endpoint).netloc}: parsed {index}/{len(identifiers)} OAI records", flush=True)
-        if max_records is not None and len(records) >= max_records:
-            break
-        time.sleep(0.1)
-    return records
+    netloc = urlparse(endpoint).netloc
+    total = len(identifiers)
+    print(f"{netloc}: found {total} OAI identifiers", flush=True)
+
+    progress_lock = threading.Lock()
+    done = 0
+
+    def fetch(identifier: str) -> CollectedArticle | None:
+        nonlocal done
+        item = _parse_oai_record(_get_record(endpoint, identifier))
+        with progress_lock:
+            done += 1
+            if done == 1 or done % 25 == 0 or done == total:
+                print(f"{netloc}: parsed {done}/{total} OAI records", flush=True)
+        return item
+
+    # Records are parsed independently and upserted by source_article_id, so the
+    # concurrent order does not change the stored result — only the wall time.
+    with ThreadPoolExecutor(max_workers=OAI_MAX_WORKERS) as executor:
+        results = executor.map(fetch, identifiers)
+
+    return [item for item in results if item is not None]
 
 
 def _list_identifiers(endpoint: str, max_records: int | None = None) -> list[str]:
@@ -349,9 +373,7 @@ def _get_with_retries(url: str, params: dict, timeout: tuple[int, int] = (5, 20)
     last_error: Exception | None = None
     for attempt in range(4):
         try:
-            session = requests.Session()
-            session.trust_env = False
-            response = session.get(url, params=params, headers=HEADERS, timeout=timeout)
+            response = _session().get(url, params=params, headers=HEADERS, timeout=timeout)
             if response.status_code not in RETRY_STATUSES:
                 response.raise_for_status()
                 return response
@@ -359,9 +381,7 @@ def _get_with_retries(url: str, params: dict, timeout: tuple[int, int] = (5, 20)
         except requests.exceptions.SSLError as exc:
             last_error = exc
             try:
-                session = requests.Session()
-                session.trust_env = False
-                response = session.get(url, params=params, headers=HEADERS, timeout=timeout, verify=False)
+                response = _session(insecure=True).get(url, params=params, headers=HEADERS, timeout=timeout, verify=False)
                 if response.status_code not in RETRY_STATUSES:
                     response.raise_for_status()
                     return response

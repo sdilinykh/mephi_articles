@@ -4,6 +4,7 @@ from hashlib import sha256
 from typing import Iterable
 import json
 import re
+import threading
 import time
 
 import requests
@@ -18,6 +19,18 @@ HEADERS = {
 }
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 urllib3.disable_warnings(InsecureRequestWarning)
+
+_local = threading.local()
+
+
+def _session(insecure: bool = False) -> requests.Session:
+    key = "insecure" if insecure else "secure"
+    session = getattr(_local, key, None)
+    if session is None:
+        session = requests.Session()
+        session.trust_env = False
+        setattr(_local, key, session)
+    return session
 
 @dataclass
 class ArticleStub:
@@ -90,17 +103,13 @@ def fetch_article_xml(article: ArticleStub) -> tuple[str, str]:
 def _get_with_retries(url: str, params: dict | None = None, timeout: int = 30) -> requests.Response:
     for attempt in range(4):
         try:
-            session = requests.Session()
-            session.trust_env = False
-            response = session.get(url, params=params, headers=HEADERS, timeout=timeout)
+            response = _session().get(url, params=params, headers=HEADERS, timeout=timeout)
             if response.status_code not in RETRY_STATUSES:
                 response.raise_for_status()
                 return response
             response.raise_for_status()
         except requests.exceptions.SSLError:
-            session = requests.Session()
-            session.trust_env = False
-            response = session.get(url, params=params, headers=HEADERS, timeout=timeout, verify=False)
+            response = _session(insecure=True).get(url, params=params, headers=HEADERS, timeout=timeout, verify=False)
             if response.status_code not in RETRY_STATUSES:
                 response.raise_for_status()
                 return response

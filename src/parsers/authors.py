@@ -59,6 +59,7 @@ def clean_author_name(value: str | None) -> str | None:
     name = EMAIL_RE.sub("", name)
     name = re.sub(r"\b[\w.+-]+\s+@[\w.-]+\.\w+\b", "", name)
     name = ORCID_RE.sub("", name)
+    name = " ".join(name.split())
     name = TRAILING_LABEL_RE.sub("", name).strip(" ,;")
     name = normalize_author_name(name)
     return name or None

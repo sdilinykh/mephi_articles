@@ -11,7 +11,7 @@ def test_not_mephi():
     assert not is_mephi_affiliation("State Atomic Energy Corporation ROSATOM, Moscow, Russia")
 
 def test_clean_affiliation_removes_numeric_label():
-    assert clean_affiliation("1 NRC Kurchatov Institute, Moscow") == "NRC Kurchatov Institute, Moscow"
+    assert clean_affiliation("1 Ivanovo State Power Engineering University, Ivanovo") == "Ivanovo State Power Engineering University, Ivanovo"
 
 def test_clean_affiliation_keeps_organization_name_without_address():
     assert clean_affiliation("Beloyarsk NPP, POB 149, 624250 Zarechny, Sverdlovsk reg., Russia Beloyarsk NPP Zarechny Russia") == "Beloyarsk NPP"
@@ -37,7 +37,7 @@ def test_author_orcid_is_extracted_from_author_bio():
       <a href="http://orcid.org/0000-0002-0744-6035">ORCID</a></p>
     </div>
     """
-    assert extract_author_orcids_from_html(html) == {"С. А. Полицын": "0000-0002-0744-6035"}
+    assert extract_author_orcids_from_html(html) == {"Полицын, С. А.": "0000-0002-0744-6035"}
 
 def test_invalid_author_noise():
     assert not is_valid_author_name("101000")

@@ -4,6 +4,7 @@ from datetime import datetime
 from email.utils import parsedate_to_datetime
 from hashlib import sha256
 import re
+import threading
 
 import requests
 from bs4 import BeautifulSoup
@@ -20,18 +21,26 @@ RSS_URL = "https://nuclear-power-engineering.ru/index.xml"
 HEADERS = {"User-Agent": "MEPhI-Journals-Dashboard/0.1 (academic metadata collector)"}
 urllib3.disable_warnings(InsecureRequestWarning)
 
+_local = threading.local()
+
+
+def _session(insecure: bool = False) -> requests.Session:
+    key = "insecure" if insecure else "secure"
+    session = getattr(_local, key, None)
+    if session is None:
+        session = requests.Session()
+        session.trust_env = False
+        setattr(_local, key, session)
+    return session
+
 
 def _get(url: str, timeout: int) -> requests.Response:
-    session = requests.Session()
-    session.trust_env = False
     try:
-        response = session.get(url, headers=HEADERS, timeout=timeout)
+        response = _session().get(url, headers=HEADERS, timeout=timeout)
         response.raise_for_status()
         return response
     except requests.exceptions.SSLError:
-        session = requests.Session()
-        session.trust_env = False
-        response = session.get(url, headers=HEADERS, timeout=timeout, verify=False)
+        response = _session(insecure=True).get(url, headers=HEADERS, timeout=timeout, verify=False)
         response.raise_for_status()
         return response
 

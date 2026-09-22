@@ -18,6 +18,9 @@ BASE_URL = "https://sv-journal.org"
 ISSUES_URL = f"{BASE_URL}/issues.php?lang=en"
 HEADERS = {"User-Agent": "MEPhI-Journals-Dashboard/0.1 (academic metadata collector)"}
 
+_SESSION = requests.Session()
+_SESSION.trust_env = False
+
 
 def collect_articles(max_records: int | None = None) -> list[CollectedArticle]:
     issue_urls = _issue_urls()
@@ -25,7 +28,7 @@ def collect_articles(max_records: int | None = None) -> list[CollectedArticle]:
 
     for issue_url in issue_urls:
         year, issue = _year_issue_from_url(issue_url)
-        response = requests.get(issue_url, headers=HEADERS, timeout=30)
+        response = _SESSION.get(issue_url, headers=HEADERS, timeout=30)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, "html.parser", from_encoding="windows-1251")
 
@@ -40,7 +43,7 @@ def collect_articles(max_records: int | None = None) -> list[CollectedArticle]:
 
 
 def _issue_urls() -> list[str]:
-    response = requests.get(ISSUES_URL, headers=HEADERS, timeout=30)
+    response = _SESSION.get(ISSUES_URL, headers=HEADERS, timeout=30)
     response.raise_for_status()
     soup = BeautifulSoup(response.content, "html.parser", from_encoding="windows-1251")
     urls: list[str] = []
@@ -70,7 +73,7 @@ def _parse_article(
     fallback_title: str,
     fallback_authors: list[str],
 ) -> CollectedArticle | None:
-    response = requests.get(url, headers=HEADERS, timeout=30)
+    response = _SESSION.get(url, headers=HEADERS, timeout=30)
     response.raise_for_status()
     soup = BeautifulSoup(response.content, "html.parser", from_encoding="windows-1251")
     text = " ".join(soup.get_text(" ", strip=True).split())
@@ -146,7 +149,7 @@ def _article_jats_xml(url: str, soup: BeautifulSoup) -> dict | None:
         if ("jats" not in href.lower() and "jats" not in text and "xml" not in text) or "pdf" in href.lower():
             continue
         try:
-            response = requests.get(urljoin(url, href), headers=HEADERS, timeout=8)
+            response = _SESSION.get(urljoin(url, href), headers=HEADERS, timeout=8)
             response.raise_for_status()
         except requests.RequestException:
             continue

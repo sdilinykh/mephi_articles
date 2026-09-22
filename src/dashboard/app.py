@@ -1,18 +1,79 @@
+import subprocess
+import sys
+import time
+
 import pandas as pd
 import streamlit as st
 import altair as alt
 from sqlalchemy import text
 
 from src.db.database import engine
+from src.collectors.journals import MEPHI_JOURNALS
 
 
 st.set_page_config(page_title="Научные журналы МИФИ", layout="wide")
-st.title("Научные журналы МИФИ")
+
+# Ограничиваем ширину выпадающего меню «Действия».
+st.markdown(
+    "<style>[data-testid='stPopoverBody']{min-width:320px !important;"
+    "max-width:320px !important;}</style>",
+    unsafe_allow_html=True,
+)
 
 
 @st.cache_data(ttl=60)
 def load_table(query: str) -> pd.DataFrame:
     return pd.read_sql(text(query), engine)
+
+
+def run_pipeline(args: list[str]) -> None:
+    subprocess.Popen([sys.executable, "-m", "src.pipeline.update", *args], cwd="/app")
+
+
+title_col, menu_col = st.columns([6, 1], vertical_alignment="center")
+title_col.title("Научные журналы МИФИ")
+
+with menu_col:
+    with st.popover("Действия", use_container_width=True):
+        st.markdown("**Загрузка данных**")
+        if st.button("Обновить все журналы", use_container_width=True):
+            run_pipeline(["--all"])
+            st.toast("Запущено инкрементальное обновление всех журналов")
+        st.caption("Инкрементально дозагружает новые статьи и обновляет "
+                   "изменившиеся во всех журналах. Старые данные сохраняются.")
+
+        journal_names = {source.source_key: source.name for source in MEPHI_JOURNALS}
+        source_key = st.selectbox(
+            "Один журнал",
+            options=list(journal_names),
+            format_func=lambda key: journal_names[key],
+        )
+        if st.button("Обновить выбранный журнал", use_container_width=True):
+            run_pipeline(["--source", source_key])
+            st.toast(f"Запущено обновление: {journal_names[source_key]}")
+        st.caption("Инкрементально дозагружает только выбранный журнал.")
+
+        with st.expander("Полная пересборка базы"):
+            st.caption("Полностью удаляет все данные и загружает всё заново. "
+                       "Используйте, только если нужна чистая база.")
+            if st.button("Пересоздать базу и загрузить всё", use_container_width=True):
+                run_pipeline(["--reset", "--all"])
+                st.toast("Запущена полная пересборка базы")
+
+        st.divider()
+        st.markdown("**Страница**")
+        if st.button("Перечитать базу", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+        st.caption("Перечитывает данные из базы и обновляет страницу "
+                   "(без загрузки из источников).")
+        auto_refresh = st.checkbox("Автообновление (каждые 30 сек)")
+        st.caption("Пока включено, страница сама перечитывает базу каждые 30 секунд.")
+
+st.caption(
+    "Загрузка идёт в фоне отдельным процессом. Прогресс смотрите на вкладке «логи» "
+    "или включите автообновление."
+)
 
 
 journals_df = load_table("""
@@ -182,8 +243,16 @@ LEFT JOIN journal j ON j.journal_id = l.journal_id
 ORDER BY l.log_id DESC
 """)
 
-if journals_df.empty:
-    st.info("База пока пуста. Сначала запустите pipeline обновления.")
+def maybe_autorefresh() -> None:
+    if auto_refresh:
+        time.sleep(30)
+        st.cache_data.clear()
+        st.rerun()
+
+
+if articles_df.empty:
+    st.info("Статьи ещё не загружены. Запустите: docker compose run --rm updater --all")
+    maybe_autorefresh()
     st.stop()
 
 counted_article_grants_df = article_grants_df[article_grants_df["funding_section_found"]]
@@ -520,3 +589,5 @@ with logs_tab:
     data = text_filter(data, ["journal_name", "status", "message"], query)
     st.caption(f"Строк: {len(data)}")
     st.dataframe(data, use_container_width=True, hide_index=True)
+
+maybe_autorefresh()
