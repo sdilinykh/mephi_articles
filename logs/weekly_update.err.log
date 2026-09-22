@@ -1,0 +1,4 @@
+shell-init: error retrieving current directory: getcwd: cannot access parent directories: Operation not permitted
+bash: /Users/macbook/Desktop/Masters_degree/mephi-journals-dashboard/scripts/weekly_update.sh: Operation not permitted
+shell-init: error retrieving current directory: getcwd: cannot access parent directories: Operation not permitted
+bash: /Users/macbook/Desktop/Masters_degree/mephi-journals-dashboard/scripts/weekly_update.sh: Operation not permitted

@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: mephi_journals
+      POSTGRES_USER: mephi
+      POSTGRES_PASSWORD: mephi
+    ports:
+      - "5432:5432"
+    volumes:
+      - mephi_pgdata:/var/lib/postgresql/data
+
+volumes:
+  mephi_pgdata:
