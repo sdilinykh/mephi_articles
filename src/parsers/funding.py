@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import re
 from bs4 import BeautifulSoup
 
-FUNDING_PARSER_VERSION = "funding-sections-v3"
+FUNDING_PARSER_VERSION = "funding-sections-v4"
 
 @dataclass
 class FundingHit:
@@ -37,17 +37,22 @@ FUNDER_PATTERNS = [
     (re.compile(r"China Institute of Atomic Energy|CIAE", re.I), "China Institute of Atomic Energy"),
 ]
 
+# Номер гранта в этой базе — числовой идентификатор. Разрешаем только цифры и
+# разделители, но обязательно требуем хотя бы одну цифру. Это исключает слова,
+# ошибочно захваченные после «N» внутри названия организации (Foundation → dation).
+GRANT_NUMBER = r"(\d+(?:[./–—-]\d+)*)"
 GRANT_PATTERNS = [
-    re.compile(r"(?:project|grant)(?:\s+(?:no\.?|number))?\s*[:№#]?\s*([A-ZА-Я0-9][A-ZА-Я0-9./–—-]{4,})", re.I),
-    re.compile(r"(?:проект|грант)(?:а)?\s*(?:№|N|no\.?)?\s*([A-ZА-Я0-9][A-ZА-Я0-9./–—-]{4,})", re.I),
-    re.compile(r"(?:№|N|No\.?)\s*([A-ZА-Я0-9][A-ZА-Я0-9./–—-]{4,})", re.I),
-    re.compile(r"(?:Agreement|Contract|Order)\s+No\.?\s*([A-ZА-Я0-9][A-ZА-Я0-9./–—-]{4,})", re.I),
-    re.compile(r"Project\s+ID\s*:\s*([A-ZА-Я0-9][A-ZА-Я0-9./–—-]{4,})", re.I),
-    re.compile(r"\b(FSWU-\d{4}-\d{4})\b", re.I),
-    re.compile(r"\b(FWEU-\d{4}-\d{4})\b", re.I),
-    re.compile(r"\b(AP\d{8})\b", re.I),
-    re.compile(r"\b(NEUP\s*\d{2}-\d{4})\b", re.I),
-    re.compile(r"\b(DENE\d{7})\b", re.I),
+    re.compile(
+        rf"\b(?:project|grant)(?:\s+(?:no\.?|number))?\s*[:№#]?\s*{GRANT_NUMBER}",
+        re.I,
+    ),
+    re.compile(
+        rf"\b(?:проект|грант)(?:а)?\s*(?:№|\b(?:N|No\.?)\b)?\s*{GRANT_NUMBER}",
+        re.I,
+    ),
+    re.compile(rf"(?:№|#|\bN\b|\bNo\.?)\s*{GRANT_NUMBER}", re.I),
+    re.compile(rf"\b(?:Agreement|Contract|Order)\s+No\.?\s*{GRANT_NUMBER}", re.I),
+    re.compile(rf"\bProject\s+ID\s*:\s*{GRANT_NUMBER}", re.I),
 ]
 
 FUNDING_SECTION_HEADINGS = {

@@ -14,6 +14,28 @@ def test_rsf_example():
     assert hits[0].funder_normalized == "RSF"
     assert hits[0].grant_number == "24-12-00123"
 
+def test_number_marker_inside_funder_name_is_not_treated_as_grant_number():
+    text = "The work was supported by the Russian Science Foundation under grant No. 19-11-110082."
+    hits = extract_funding(text)
+    assert hits
+    assert hits[0].funder_normalized == "RSF"
+    assert hits[0].grant_number == "19-11-110082"
+
+def test_number_is_extracted_only_from_acknowledgements_section():
+    html = """
+    <h2>Acknowledgements</h2>
+    <p>The work was supported by the Russian Science Foundation under grant No. 19-11-110082.</p>
+    """
+    hits = extract_funding_from_html(html)
+    assert hits
+    assert hits[0].grant_number == "19-11-110082"
+
+def test_grant_number_contains_only_digits_and_separators():
+    text = "The work was supported by RFBR, grant No. ABC-19-11-110082."
+    hits = extract_funding(text)
+    assert hits
+    assert hits[0].grant_number is None
+
 def test_support_outside_section_is_not_counted_as_article_funding():
     text = "Introduction. This work was supported by RFBR according to project 19-29-02006."
     assert extract_funding_from_sections(text) == []
