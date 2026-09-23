@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import re
 from bs4 import BeautifulSoup
 
-FUNDING_PARSER_VERSION = "funding-sections-v6"
+FUNDING_PARSER_VERSION = "funding-sections-v7"
 
 @dataclass
 class FundingHit:
@@ -37,18 +37,19 @@ FUNDER_PATTERNS = [
     (re.compile(r"China Institute of Atomic Energy|CIAE", re.I), "China Institute of Atomic Energy"),
 ]
 
-# Номер гранта в этой базе — числовой идентификатор. Разрешаем только цифры и
-# разделители, но обязательно требуем хотя бы одну цифру. Это исключает слова,
-# ошибочно захваченные после «N» внутри названия организации (Foundation → dation).
-GRANT_NUMBER = r"(\d+(?:[./–—-]\d+)*)(?![A-ZА-Я0-9])"
+# Идентификатор гранта может содержать буквы, цифры и разделители, но обязан
+# содержать цифру. Поэтому слово после «N» в названии организации (Foundation
+# → dation) не может стать номером, а FSWU-2022-0016 и 19-07-00921A сохраняются
+# целиком.
+GRANT_NUMBER = r"(?=[A-ZА-Я0-9./–—-]*\d)([A-ZА-Я0-9]+(?:[./–—-][A-ZА-Я0-9]+)*)(?![A-ZА-Я0-9])"
 # Вёрстка журналов иногда ставит сноску между словом «project» и номером.
 # Сноска не входит в номер и должна быть пропущена до его извлечения.
 GRANT_NUMBER_PREFIX = r"(?:[¹²³⁴⁵⁶⁷⁸⁹⁰*†‡]+\s*)?"
 # Идентификатор без явной метки допускаем только с двумя и более
 # разделителями: это отсекает годы и диапазоны дат, но покрывает форматы
-# 19-11-110082 и 14.604.21.0178 после названия фонда.
-UNLABELLED_GRANT_NUMBER = r"(?<![A-Za-zА-Яа-я0-9])(?<![A-Za-zА-Яа-я]-)(?<![A-Za-zА-Яа-я][./–—-])(?<![0-9][./–—-])(\d+(?:[./–—-]\d+){2,})(?![A-Za-zА-Яа-я0-9])"
-IMMEDIATE_GRANT_NUMBER = r"^\s*(?:[¹²³⁴⁵⁶⁷⁸⁹⁰*†‡]+\s*)?(\d+(?:[./–—-]\d+)+)(?![A-Za-zА-Яа-я0-9])"
+# 19-11-110082, FSWU-2022-0016 и 14.604.21.0178 после названия фонда.
+UNLABELLED_GRANT_NUMBER = r"(?<![A-Za-zА-Яа-я0-9])(?<![A-Za-zА-Яа-я]-)(?<![A-Za-zА-Яа-я][./–—-])(?<![0-9][./–—-])(?=[A-Za-zА-Яа-я0-9./–—-]*\d)([A-Za-zА-Яа-я0-9]+(?:[./–—-][A-Za-zА-Яа-я0-9]+){2,})(?![A-Za-zА-Яа-я0-9])"
+IMMEDIATE_GRANT_NUMBER = r"^\s*(?:[¹²³⁴⁵⁶⁷⁸⁹⁰*†‡]+\s*)?(?=[A-Za-zА-Яа-я0-9./–—-]*\d)([A-Za-zА-Яа-я0-9]+(?:[./–—-][A-Za-zА-Яа-я0-9]+)+)(?![A-Za-zА-Яа-я0-9])"
 GRANT_PATTERNS = [
     re.compile(
         rf"\b(?:project|grant)(?:s|\s+(?:no\.?|number(?:s)?))?\s*[:№#]?\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}",
@@ -147,7 +148,11 @@ def has_support_or_equipment_text(text: str | None) -> bool:
 def _contains_other_funder(value: str, current_span_text: str, current_normalized: str) -> bool:
     for pattern, normalized in FUNDER_PATTERNS:
         for match in pattern.finditer(value):
-            if match.group(0).lower() != current_span_text.lower() and normalized != current_normalized:
+            if (
+                match.group(0).lower() != current_span_text.lower()
+                and normalized != current_normalized
+                and normalized != "State Assignment"
+            ):
                 return True
     return False
 
@@ -177,6 +182,11 @@ def _grant_number_near_funder(clean: str, funder_match: re.Match, current_normal
     immediate_number = re.search(IMMEDIATE_GRANT_NUMBER, right_context)
     if immediate_number:
         return immediate_number.group(1).rstrip(".,;)")
+
+    # Priority 2030 is a programme name. A grant number that appears before it
+    # in a sentence usually belongs to another funder named earlier.
+    if current_normalized == "Priority 2030":
+        return None
 
     left_context = clean[max(0, funder_match.start() - 220): funder_match.start()]
     for pattern in GRANT_PATTERNS:

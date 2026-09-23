@@ -45,11 +45,11 @@ def test_date_range_is_not_treated_as_an_unlabelled_grant_number():
     assert hits
     assert hits[0].grant_number is None
 
-def test_short_numeric_prefix_of_an_alphanumeric_code_is_not_a_grant_number():
+def test_alphanumeric_grant_identifier_is_not_truncated():
     text = "This work was supported by Rosatom under Contract No. N.4o.241.19.20.1027."
     hits = extract_funding(text)
     assert hits
-    assert hits[0].grant_number is None
+    assert hits[0].grant_number == "N.4o.241.19.20.1027"
 
 def test_one_separator_number_immediately_after_funder_is_extracted():
     text = "This work was supported by RSF 24-2300111."
@@ -66,11 +66,29 @@ def test_number_is_extracted_only_from_acknowledgements_section():
     assert hits
     assert hits[0].grant_number == "19-11-110082"
 
-def test_grant_number_contains_only_digits_and_separators():
+def test_grant_number_can_contain_letters_and_separators():
     text = "The work was supported by RFBR, grant No. ABC-19-11-110082."
     hits = extract_funding(text)
     assert hits
-    assert hits[0].grant_number is None
+    assert hits[0].grant_number == "ABC-19-11-110082"
+
+def test_grant_identifier_ending_with_a_letter_is_not_truncated():
+    text = "This work was funded by RFBR (project 19-07-00921A)."
+    hits = extract_funding(text)
+    assert hits
+    assert hits[0].grant_number == "19-07-00921A"
+
+def test_state_assignment_identifier_with_letters_is_extracted():
+    text = "The work at NRNU MEPhI was supported under Project FSWU-2022-0016."
+    hits = extract_funding(text)
+    assert hits
+    assert hits[0].grant_number == "FSWU-2022-0016"
+
+def test_project_number_is_not_assigned_to_priority_2030_named_after_it():
+    text = "The work at NRNU MEPhI was supported under Project FSWU-2022-0016 and program Priority 2030."
+    hits = {hit.funder_normalized: hit.grant_number for hit in extract_funding(text)}
+    assert hits["NRNU MEPhI"] == "FSWU-2022-0016"
+    assert hits["Priority 2030"] is None
 
 def test_support_outside_section_is_not_counted_as_article_funding():
     text = "Introduction. This work was supported by RFBR according to project 19-29-02006."
