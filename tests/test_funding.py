@@ -21,6 +21,12 @@ def test_number_marker_inside_funder_name_is_not_treated_as_grant_number():
     assert hits[0].funder_normalized == "RSF"
     assert hits[0].grant_number == "19-11-110082"
 
+def test_number_after_a_footnote_marker_is_extracted():
+    text = "The reported study was funded by the Russian Science Foundation (RSF) according to the research project ¹ 19-11-110082."
+    hits = extract_funding(text)
+    assert hits
+    assert hits[0].grant_number == "19-11-110082"
+
 def test_number_is_extracted_only_from_acknowledgements_section():
     html = """
     <h2>Acknowledgements</h2>

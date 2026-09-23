@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import re
 from bs4 import BeautifulSoup
 
-FUNDING_PARSER_VERSION = "funding-sections-v4"
+FUNDING_PARSER_VERSION = "funding-sections-v5"
 
 @dataclass
 class FundingHit:
@@ -41,18 +41,21 @@ FUNDER_PATTERNS = [
 # разделители, но обязательно требуем хотя бы одну цифру. Это исключает слова,
 # ошибочно захваченные после «N» внутри названия организации (Foundation → dation).
 GRANT_NUMBER = r"(\d+(?:[./–—-]\d+)*)"
+# Вёрстка журналов иногда ставит сноску между словом «project» и номером.
+# Сноска не входит в номер и должна быть пропущена до его извлечения.
+GRANT_NUMBER_PREFIX = r"(?:[¹²³⁴⁵⁶⁷⁸⁹⁰*†‡]+\s*)?"
 GRANT_PATTERNS = [
     re.compile(
-        rf"\b(?:project|grant)(?:\s+(?:no\.?|number))?\s*[:№#]?\s*{GRANT_NUMBER}",
+        rf"\b(?:project|grant)(?:\s+(?:no\.?|number))?\s*[:№#]?\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}",
         re.I,
     ),
     re.compile(
-        rf"\b(?:проект|грант)(?:а)?\s*(?:№|\b(?:N|No\.?)\b)?\s*{GRANT_NUMBER}",
+        rf"\b(?:проект|грант)(?:а)?\s*(?:№|\b(?:N|No\.?)\b)?\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}",
         re.I,
     ),
-    re.compile(rf"(?:№|#|\bN\b|\bNo\.?)\s*{GRANT_NUMBER}", re.I),
-    re.compile(rf"\b(?:Agreement|Contract|Order)\s+No\.?\s*{GRANT_NUMBER}", re.I),
-    re.compile(rf"\bProject\s+ID\s*:\s*{GRANT_NUMBER}", re.I),
+    re.compile(rf"(?:№|#|\bN\b|\bNo\.?)\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}", re.I),
+    re.compile(rf"\b(?:Agreement|Contract|Order)\s+No\.?\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}", re.I),
+    re.compile(rf"\bProject\s+ID\s*:\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}", re.I),
 ]
 
 FUNDING_SECTION_HEADINGS = {
@@ -118,7 +121,7 @@ def extract_funding(text: str) -> list[FundingHit]:
             left = max(0, match.start() - 180)
             right = min(len(clean), match.end() + 220)
             context = clean[left:right]
-            grant_number = _grant_number_near_funder(clean, match)
+            grant_number = _grant_number_near_funder(clean, match, normalized)
             hits.append(FundingHit(
                 funder_raw=match.group(0),
                 funder_normalized=normalized,
@@ -136,15 +139,15 @@ def has_support_or_equipment_text(text: str | None) -> bool:
     return bool(text and SUPPORT_OR_EQUIPMENT_RE.search(" ".join(text.split())))
 
 
-def _contains_other_funder(value: str, current_span_text: str) -> bool:
-    for pattern, _normalized in FUNDER_PATTERNS:
+def _contains_other_funder(value: str, current_span_text: str, current_normalized: str) -> bool:
+    for pattern, normalized in FUNDER_PATTERNS:
         for match in pattern.finditer(value):
-            if match.group(0).lower() != current_span_text.lower():
+            if match.group(0).lower() != current_span_text.lower() and normalized != current_normalized:
                 return True
     return False
 
 
-def _grant_number_near_funder(clean: str, funder_match: re.Match) -> str | None:
+def _grant_number_near_funder(clean: str, funder_match: re.Match, current_normalized: str) -> str | None:
     current_funder = funder_match.group(0)
 
     right_context = clean[funder_match.end(): min(len(clean), funder_match.end() + 140)]
@@ -153,7 +156,7 @@ def _grant_number_near_funder(clean: str, funder_match: re.Match) -> str | None:
         if not grant_match:
             continue
         between = right_context[:grant_match.start()]
-        if _contains_other_funder(between, current_funder):
+        if _contains_other_funder(between, current_funder, current_normalized):
             continue
         return grant_match.group(1).rstrip(".,;)")
 
@@ -164,7 +167,7 @@ def _grant_number_near_funder(clean: str, funder_match: re.Match) -> str | None:
             continue
         grant_match = matches[-1]
         between = left_context[grant_match.end():]
-        if _contains_other_funder(between, current_funder):
+        if _contains_other_funder(between, current_funder, current_normalized):
             continue
         return grant_match.group(1).rstrip(".,;)")
 
