@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import re
 from bs4 import BeautifulSoup
 
-FUNDING_PARSER_VERSION = "funding-sections-v5"
+FUNDING_PARSER_VERSION = "funding-sections-v6"
 
 @dataclass
 class FundingHit:
@@ -40,21 +40,26 @@ FUNDER_PATTERNS = [
 # Номер гранта в этой базе — числовой идентификатор. Разрешаем только цифры и
 # разделители, но обязательно требуем хотя бы одну цифру. Это исключает слова,
 # ошибочно захваченные после «N» внутри названия организации (Foundation → dation).
-GRANT_NUMBER = r"(\d+(?:[./–—-]\d+)*)"
+GRANT_NUMBER = r"(\d+(?:[./–—-]\d+)*)(?![A-ZА-Я0-9])"
 # Вёрстка журналов иногда ставит сноску между словом «project» и номером.
 # Сноска не входит в номер и должна быть пропущена до его извлечения.
 GRANT_NUMBER_PREFIX = r"(?:[¹²³⁴⁵⁶⁷⁸⁹⁰*†‡]+\s*)?"
+# Идентификатор без явной метки допускаем только с двумя и более
+# разделителями: это отсекает годы и диапазоны дат, но покрывает форматы
+# 19-11-110082 и 14.604.21.0178 после названия фонда.
+UNLABELLED_GRANT_NUMBER = r"(?<![A-Za-zА-Яа-я0-9])(?<![A-Za-zА-Яа-я]-)(?<![A-Za-zА-Яа-я][./–—-])(?<![0-9][./–—-])(\d+(?:[./–—-]\d+){2,})(?![A-Za-zА-Яа-я0-9])"
+IMMEDIATE_GRANT_NUMBER = r"^\s*(?:[¹²³⁴⁵⁶⁷⁸⁹⁰*†‡]+\s*)?(\d+(?:[./–—-]\d+)+)(?![A-Za-zА-Яа-я0-9])"
 GRANT_PATTERNS = [
     re.compile(
-        rf"\b(?:project|grant)(?:\s+(?:no\.?|number))?\s*[:№#]?\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}",
+        rf"\b(?:project|grant)(?:s|\s+(?:no\.?|number(?:s)?))?\s*[:№#]?\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}",
         re.I,
     ),
     re.compile(
         rf"\b(?:проект|грант)(?:а)?\s*(?:№|\b(?:N|No\.?)\b)?\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}",
         re.I,
     ),
-    re.compile(rf"(?:№|#|\bN\b|\bNo\.?)\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}", re.I),
-    re.compile(rf"\b(?:Agreement|Contract|Order)\s+No\.?\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}", re.I),
+    re.compile(rf"(?:№|#|\bN\.?|\bNo\.?)\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}", re.I),
+    re.compile(rf"\b(?:Agreement|Contract|Order)(?:\s+No\.?)?\s*[:№#]?\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}", re.I),
     re.compile(rf"\bProject\s+ID\s*:\s*{GRANT_NUMBER_PREFIX}{GRANT_NUMBER}", re.I),
 ]
 
@@ -150,7 +155,7 @@ def _contains_other_funder(value: str, current_span_text: str, current_normalize
 def _grant_number_near_funder(clean: str, funder_match: re.Match, current_normalized: str) -> str | None:
     current_funder = funder_match.group(0)
 
-    right_context = clean[funder_match.end(): min(len(clean), funder_match.end() + 140)]
+    right_context = clean[funder_match.end(): min(len(clean), funder_match.end() + 220)]
     for pattern in GRANT_PATTERNS:
         grant_match = pattern.search(right_context)
         if not grant_match:
@@ -160,7 +165,20 @@ def _grant_number_near_funder(clean: str, funder_match: re.Match, current_normal
             continue
         return grant_match.group(1).rstrip(".,;)")
 
-    left_context = clean[max(0, funder_match.start() - 80): funder_match.start()]
+    # A frequent wording is "Russian Science Foundation 19-11-110082":
+    # the number has no explicit No./grant marker, but its structured numeric
+    # form immediately after the funder distinguishes it from a year or date.
+    right_number = re.search(UNLABELLED_GRANT_NUMBER, right_context)
+    if right_number:
+        between = right_context[:right_number.start()]
+        if not _contains_other_funder(between, current_funder, current_normalized):
+            return right_number.group(1).rstrip(".,;)")
+
+    immediate_number = re.search(IMMEDIATE_GRANT_NUMBER, right_context)
+    if immediate_number:
+        return immediate_number.group(1).rstrip(".,;)")
+
+    left_context = clean[max(0, funder_match.start() - 220): funder_match.start()]
     for pattern in GRANT_PATTERNS:
         matches = list(pattern.finditer(left_context))
         if not matches:
@@ -170,6 +188,13 @@ def _grant_number_near_funder(clean: str, funder_match: re.Match, current_normal
         if _contains_other_funder(between, current_funder, current_normalized):
             continue
         return grant_match.group(1).rstrip(".,;)")
+
+    left_number_matches = list(re.finditer(UNLABELLED_GRANT_NUMBER, left_context))
+    if left_number_matches:
+        grant_match = left_number_matches[-1]
+        between = left_context[grant_match.end():]
+        if not _contains_other_funder(between, current_funder, current_normalized):
+            return grant_match.group(1).rstrip(".,;)")
 
     return None
 

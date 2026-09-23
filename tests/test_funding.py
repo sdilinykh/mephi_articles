@@ -27,6 +27,36 @@ def test_number_after_a_footnote_marker_is_extracted():
     assert hits
     assert hits[0].grant_number == "19-11-110082"
 
+def test_number_without_a_label_after_funder_is_extracted():
+    text = "This work was supported by the Russian Foundation for Basic Research 23-19-0096."
+    hits = extract_funding(text)
+    assert hits
+    assert hits[0].grant_number == "23-19-0096"
+
+def test_contract_number_with_a_footnote_marker_is_extracted():
+    text = "This work was supported by the Ministry of Education and Science of the Russian Federation (contract ¹ 14.604.21.0178)."
+    hits = extract_funding(text)
+    assert hits
+    assert hits[0].grant_number == "14.604.21.0178"
+
+def test_date_range_is_not_treated_as_an_unlabelled_grant_number():
+    text = "This work was supported by Priority 2030 in 2022-2024."
+    hits = extract_funding(text)
+    assert hits
+    assert hits[0].grant_number is None
+
+def test_short_numeric_prefix_of_an_alphanumeric_code_is_not_a_grant_number():
+    text = "This work was supported by Rosatom under Contract No. N.4o.241.19.20.1027."
+    hits = extract_funding(text)
+    assert hits
+    assert hits[0].grant_number is None
+
+def test_one_separator_number_immediately_after_funder_is_extracted():
+    text = "This work was supported by RSF 24-2300111."
+    hits = extract_funding(text)
+    assert hits
+    assert hits[0].grant_number == "24-2300111"
+
 def test_number_is_extracted_only_from_acknowledgements_section():
     html = """
     <h2>Acknowledgements</h2>
